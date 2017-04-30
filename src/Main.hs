@@ -1,7 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- TODO: Logging
--- TODO: Make sure we don't add duplicates of episodes.
 -- TODO: Better error handling
 -- TODO: Etags
 
