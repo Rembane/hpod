@@ -3,6 +3,7 @@
 module Podcast.Types
     ( Episode(..)
     , Podcast(..)
+    , Url
     ) where
 
 import Data.Serialize

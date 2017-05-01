@@ -24,6 +24,7 @@ executable hpod
                        http-client >= 0.5.6.1,
                        http-types >= 0.9.1,
                        mtl >= 2.2.1,
+                       optparse-applicative >= 0.13.2.0,
                        text >= 1.2.2.1,
                        time >= 1.6.0.1,
                        vector >= 0.11.0.0,

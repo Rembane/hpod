@@ -24,7 +24,7 @@ import Network.HTTP.Client (Manager, brRead, httpLbs, parseRequest, responseBody
 import Network.HTTP.Types.Status (statusCode)
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath (FilePath, (</>))
-import System.IO (IOMode(..), withFile)
+import System.IO (IOMode(..), hSetBinaryMode, withFile)
 
 import Podcast.Rss
 import Podcast.Types
@@ -40,7 +40,7 @@ textToSlug = T.toLower
 newPodcast :: Text -> Podcast
 newPodcast url = Podcast "" url M.empty (UTCTime (fromGregorian 1970 1 1) 0) -- epoch
 
--- | Fetch a podcast
+-- | Download a podcast RSS/Atom file from the internet.
 fetchPodcast :: Podcast -> Manager -> IO (Either String Podcast)
 fetchPodcast p mgr = do
     r <- mapM (`httpLbs` mgr) (parseRequest (T.unpack $ pcUrl p))
@@ -66,12 +66,12 @@ downloadEpisode basePath p e mgr = do
             createDirectoryIfMissing True (basePath </> relativeEpisodePath)
             withResponse req mgr $ \br ->
                 withFile (basePath </> relativeEpisodePath </> filename) WriteMode $ \fh ->
-                    readLoop br fh
+                    hSetBinaryMode fh True >> readLoop br fh
             now <- getCurrentTime
             return $ Right $ e { localFilename = Just $ T.pack (relativeEpisodePath </> filename), downloaded = Just now }
     where
         readLoop br fh = do
             bs <- brRead $ responseBody br
             if B.null bs
-               then putStrLn "Got empty read. Returning." >> return ()
+               then return ()
                else B.hPut fh bs >> readLoop br fh
