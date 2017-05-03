@@ -79,12 +79,13 @@ main = do
                            case p' of
                              Left err  -> print err >> return p
                              Right p'' -> do
-                                 print p'
-                                 downloadEpisode "podcasts" p'' (head $ M.elems $ episodes p'') manager
-                                 es' <- forM (M.elems $ episodes p) $ \e -> do
+                                 print p''
+                                 es' <- forM (M.elems $ episodes p'') $ \e -> do
+                                     putStr "Downloading... "
+                                     print e
                                      e' <- downloadEpisode "podcasts" p'' e manager
                                      case e' of
-                                       Left err  -> print err >> return (epUrl e, e)
+                                       Left err  -> putStrLn "Boom!" >> print err >> return (epUrl e, e)
                                        Right e'' -> return (epUrl e'', e'')
 
                                  return p'' { episodes = M.fromList es' }
