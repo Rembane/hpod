@@ -11,7 +11,7 @@ import Data.Bifunctor (first)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Char (isAlphaNum, isSpace)
-import Data.Monoid ((<>))
+import Data.Semigroup ((<>))
 import Data.Function (on)
 import Data.Time.Calendar (fromGregorian)
 import Data.Text (Text)

@@ -10,7 +10,7 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.Map.Strict as M
 import Data.Map.Strict (Map)
-import Data.Monoid ((<>))
+import Data.Semigroup ((<>))
 import Data.Text.Encoding (decodeUtf8')
 import Data.Time.Clock (UTCTime(..))
 import Data.Time.Format (defaultTimeLocale, parseTimeM)

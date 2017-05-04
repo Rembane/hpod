@@ -3,13 +3,14 @@
 -- TODO: Logging
 -- TODO: Better error handling
 -- TODO: Etags
+-- TODO: Make the program not check a podcast which has been checked the last hour or something.
 
 module Main where
 
 import Control.Monad (forM)
 import qualified Data.ByteString as B
 import qualified Data.Map as M
-import Data.Monoid ((<>))
+import Data.Semigroup ((<>))
 import Data.Serialize (decode, encode)
 import qualified Data.Text as T
 import Network.HTTP.Client (defaultManagerSettings, newManager)
