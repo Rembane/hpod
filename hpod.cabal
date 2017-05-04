@@ -13,7 +13,8 @@ executable hpod
   main-is:             Main.hs
   other-modules:       Podcast, Podcast.Rss, Podcast.Types
   -- other-extensions:
-  build-depends:       base >=4.9 && <4.10,
+  build-depends:       attoparsec >= 0.13.1.0,
+                       base >=4.9 && <4.10,
                        bytestring >= 0.10.8.1,
                        cereal >= 0.5.4.0,
                        cereal-text >= 0.1.0.2,
@@ -23,6 +24,7 @@ executable hpod
                        filepath >= 1.4.1.1,
                        http-client >= 0.5.6.1,
                        http-types >= 0.9.1,
+                       ini >= 0.3.5,
                        mtl >= 2.2.1,
                        optparse-applicative >= 0.13.2.0,
                        text >= 1.2.2.1,
