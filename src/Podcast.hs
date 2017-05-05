@@ -56,7 +56,8 @@ fetchPodcast p mgr = do
 
 -- | Download an episode
 downloadEpisode :: FilePath -> Podcast -> Episode -> Manager -> IO (Either String Episode)
-downloadEpisode basePath p e mgr = do
+downloadEpisode basePath p e mgr | (Just _) <- downloaded e = return $ Left "Episode already downloaded."
+                                 | otherwise = do
     case (parseRequest . T.unpack . epUrl) e of
         Left err  -> return $ Left $ show err
         Right req -> do
