@@ -1,9 +1,10 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf, OverloadedStrings #-}
 
 -- TODO: Logging
 -- TODO: Better error handling
 -- TODO: Etags
 -- TODO: Make the program not check a podcast which has been checked the last hour or something.
+-- TODO: Add option to specify path to config file.
 
 module Main where
 
@@ -11,16 +12,20 @@ import Control.Monad (forM)
 import qualified Data.Attoparsec.Text as A
 import qualified Data.ByteString as B
 import Data.Ini (Ini, parseValue, readIniFile)
+import Data.List (repeat, sortOn)
 import qualified Data.Map as M
+import Data.Maybe (fromJust)
 import Data.Semigroup ((<>))
 import Data.Serialize (decode, encode)
 import qualified Data.Text as T
 import Data.Text (Text)
-import Network.HTTP.Client (defaultManagerSettings, newManager)
+import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
 import Options.Applicative (Parser, argument, auto, command, execParser, fullDesc, header, help, helper, info, long, metavar, option, progDesc, short, str, subparser, value)
-import System.Directory (doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getFileSize, listDirectory)
 import System.Exit (exitFailure)
+import System.FilePath ((</>))
 import System.IO (IOMode(..), hSetBinaryMode, withFile)
+import System.Posix (fileSize, getFileStatus, isDirectory, isRegularFile)
 
 import Podcast
 
@@ -73,6 +78,55 @@ readConfigFile ini =
            (T.unpack $ parseValueDefault "filepaths" "podcast-path"        "podcasts/"   A.takeText ini)
            (           parseValueDefault "podcasts"  "max-allocated-space" 1024          A.decimal  ini)
 
+-- | Computes the total filesize of a path and its subdirectories.
+getRecursiveFileSize :: FilePath -> IO Integer
+getRecursiveFileSize fp = do
+    st <- getFileStatus fp
+    if | isDirectory   st -> listDirectory fp >>= \dirs -> sum <$> mapM (getRecursiveFileSize . (fp </>)) dirs
+       | isRegularFile st -> (return . fromIntegral . fileSize) st
+       | otherwise        -> return 0
+
+-- | Get the size of an episode on the disk.
+getEpisodeFileSize :: Episode -> IO Integer
+getEpisodeFileSize e = maybe (return 0) (getFileSize . T.unpack) (localFilename e)
+
+-- | Downloads new episodes while there still is space to put them in.
+downloadAll :: Config -> [Podcast] -> IO [Podcast]
+downloadAll cfg ps = do
+    manager  <- newManager defaultManagerSettings
+    currSize <- getRecursiveFileSize (cfgPodcastPath cfg)
+    if currSize >= fromIntegral (cfgAllocatedSpace cfg)
+       then putStrLn "We have used up our podcast storage quota. Quitting." >> return ps
+       else forM ps $ \p -> do
+           p' <- fetchPodcast p manager
+           case p' of
+             Left err  -> print err >> return p
+             Right p'' -> do
+                 print p''
+                 -- Download in chronological order.
+                 es' <- (moderateDownloader manager p'' currSize . sortOn pubDate . M.elems . episodes) p''
+                 return p'' { episodes = M.fromList es' }
+    where
+        -- | Download until we've reached the quota.
+        moderateDownloader :: Manager -> Podcast -> Integer -> [Episode] -> IO [(Url, Episode)]
+        moderateDownloader _       _ _        []     = return []
+        moderateDownloader manager p currSize (e:es) = do
+            if currSize >= (fromIntegral (cfgAllocatedSpace cfg))
+               then putStrLn "We have used all our podcast quota." >> return (map (\x -> (epUrl x, x)) (e:es))
+               else do
+                   e' <- downloadE manager p e
+                   size <- getEpisodeFileSize (snd e')
+                   (e':) <$> moderateDownloader manager p (currSize + size) es
+
+        -- Download an episode, the quick and dirty way.
+        downloadE manager p e = do
+            putStr "Downloading... "
+            print e
+            e' <- downloadEpisode (cfgPodcastPath cfg) p e manager
+            case e' of
+              Left err  -> putStrLn "Boom!" >> print err >> return (epUrl e, e)
+              Right e'' -> return (epUrl e'', e'')
+
 main :: IO ()
 main = do
     cfg <- either (\e -> putStrLn e >> exitFailure) return =<< (fmap . fmap) readConfigFile (readIniFile "hpod.ini")
@@ -93,27 +147,14 @@ main = do
                  withFile dbPath WriteMode (const $ return ())
                  (return . return) []
 
+    dexists <- doesDirectoryExist (cfgPodcastPath cfg)
+    if dexists
+       then return ()
+       else createDirectoryIfMissing True (cfgPodcastPath cfg)
+
     case db of
       Left err -> putStrLn err >> exitFailure
       Right db' -> case action of
                      Add url  -> saveDb dbPath (newPodcast url : db')
                      List     -> mapM_ print db'
-                     Download -> do
-                       manager <- newManager defaultManagerSettings
-                       db'' <- forM db' $ \p -> do
-                           p' <- fetchPodcast p manager
-                           case p' of
-                             Left err  -> print err >> return p
-                             Right p'' -> do
-                                 print p''
-                                 es' <- forM (M.elems $ episodes p'') $ \e -> do
-                                     putStr "Downloading... "
-                                     print e
-                                     e' <- downloadEpisode (cfgPodcastPath cfg) p'' e manager
-                                     case e' of
-                                       Left err  -> putStrLn "Boom!" >> print err >> return (epUrl e, e)
-                                       Right e'' -> return (epUrl e'', e'')
-
-                                 return p'' { episodes = M.fromList es' }
-                       saveDb dbPath db''
-
+                     Download -> saveDb dbPath =<< downloadAll cfg db'
