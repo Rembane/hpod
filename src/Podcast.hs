@@ -7,6 +7,7 @@ module Podcast
     ) where
 
 import Control.Error (note, partitionEithers)
+import Control.Monad (unless)
 import Data.Bifunctor (first)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
@@ -26,6 +27,7 @@ import System.Directory (createDirectoryIfMissing)
 import System.FilePath (FilePath, (</>))
 import System.IO (IOMode(..), hSetBinaryMode, withFile)
 
+import Logging
 import Podcast.Rss
 import Podcast.Types
 
@@ -41,15 +43,17 @@ newPodcast :: Text -> Podcast
 newPodcast url = Podcast "" url M.empty (UTCTime (fromGregorian 1970 1 1) 0) -- epoch
 
 -- | Download a podcast RSS/Atom file from the internet.
-fetchPodcast :: Podcast -> Manager -> IO (Either String Podcast)
-fetchPodcast p mgr = do
+fetchPodcast :: (IsString msg, ToLogStr msg) => SugarLogger msg -> Podcast -> Manager -> IO (Either String Podcast)
+fetchPodcast logger p mgr = do
     r <- mapM (`httpLbs` mgr) (parseRequest (T.unpack $ pcUrl p))
     case r of
       Left e         -> return $ Left $ show e
       Right response -> do
-          putStrLn $ "The status code was: " ++ show (statusCode $ responseStatus response)
-          -- TODO: Log the lefts.
-          let (pct, (_, rs)) = partitionEithers <$> (parseRss . BL.toStrict . responseBody) response
+          logger $ fromString $ "The status code was: " <> show (statusCode $ responseStatus response)
+          let (pct, (ls, rs)) = partitionEithers <$> (parseRss . BL.toStrict . responseBody) response
+          unless (null ls) $ do
+              logger "These episodes returned errors:"
+              mapM_ (logger . fromString . show) ls
           let pct' = note "Got no podcast title from parseRss" pct >>= (first show . decodeUtf8')
           now <- getCurrentTime
           return $ either Left (\t -> Right $ p { pcTitle = t, episodes = foldr (\e m -> M.insertWith (\_ old -> old) (epUrl e) e m) (episodes p) rs, lastChecked = now }) pct'

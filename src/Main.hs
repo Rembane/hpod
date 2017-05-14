@@ -1,6 +1,5 @@
 {-# LANGUAGE MultiWayIf, OverloadedStrings #-}
 
--- TODO: Logging
 -- TODO: Better error handling
 -- TODO: Etags
 -- TODO: Make the program not check a podcast which has been checked the last hour or something.
@@ -8,6 +7,7 @@
 
 module Main where
 
+import Control.Exception (bracket)
 import Control.Monad (forM)
 import qualified Data.Attoparsec.Text as A
 import qualified Data.ByteString as B
@@ -27,6 +27,7 @@ import System.FilePath ((</>))
 import System.IO (IOMode(..), hSetBinaryMode, withFile)
 import System.Posix (fileSize, getFileStatus, isDirectory, isRegularFile)
 
+import Logging
 import Podcast
 
 -- | Config data type
@@ -91,18 +92,18 @@ getEpisodeFileSize :: Episode -> IO Integer
 getEpisodeFileSize e = maybe (return 0) (getFileSize . T.unpack) (localFilename e)
 
 -- | Downloads new episodes while there still is space to put them in.
-downloadAll :: Config -> [Podcast] -> IO [Podcast]
-downloadAll cfg ps = do
+downloadAll :: (IsString msg, ToLogStr msg) => SugarLogger msg -> Config -> [Podcast] -> IO [Podcast]
+downloadAll logger cfg ps = do
     manager  <- newManager defaultManagerSettings
     currSize <- getRecursiveFileSize (cfgPodcastPath cfg)
     if currSize >= fromIntegral (cfgAllocatedSpace cfg)
-       then putStrLn "We have used up our podcast storage quota. Quitting." >> return ps
+       then (logger "We have used up our podcast storage quota. Quitting.") >> return ps
        else forM ps $ \p -> do
-           p' <- fetchPodcast p manager
+           p' <- fetchPodcast logger p manager
            case p' of
-             Left err  -> print err >> return p
+             Left err  -> logger (fromString err) >> return p
              Right p'' -> do
-                 print p''
+                 logger (fromString $ show p'')
                  -- Download in chronological order.
                  es' <- (moderateDownloader manager p'' currSize . sortOn pubDate . M.elems . episodes) p''
                  return p'' { episodes = M.fromList es' }
@@ -112,7 +113,7 @@ downloadAll cfg ps = do
         moderateDownloader _       _ _        []     = return []
         moderateDownloader manager p currSize (e:es) = do
             if currSize >= (fromIntegral (cfgAllocatedSpace cfg))
-               then putStrLn "We have used all our podcast quota." >> return (map (\x -> (epUrl x, x)) (e:es))
+               then logger "We have used all our podcast quota." >> return (map (\x -> (epUrl x, x)) (e:es))
                else do
                    e' <- downloadE manager p e
                    size <- getEpisodeFileSize (snd e')
@@ -120,11 +121,13 @@ downloadAll cfg ps = do
 
         -- Download an episode, the quick and dirty way.
         downloadE manager p e = do
-            putStr "Downloading... "
-            print e
+            logger "Downloading... "
+            logger (fromString $ show e)
             e' <- downloadEpisode (cfgPodcastPath cfg) p e manager
             case e' of
-              Left err  -> putStrLn "Boom!" >> print err >> return (epUrl e, e)
+              Left err  -> do
+                  logger $ fromString ("Boom!\n" <> show err)
+                  return (epUrl e, e)
               Right e'' -> return (epUrl e'', e'')
 
 main :: IO ()
@@ -152,9 +155,16 @@ main = do
        then return ()
        else createDirectoryIfMissing True (cfgPodcastPath cfg)
 
-    case db of
-      Left err -> putStrLn err >> exitFailure
-      Right db' -> case action of
-                     Add url  -> saveDb dbPath (newPodcast url : db')
-                     List     -> mapM_ print db'
-                     Download -> saveDb dbPath =<< downloadAll cfg db'
+    bracket
+        newLogger
+        (\(_, loggerCleanup) -> loggerCleanup)
+        (\(logger, loggerCleanup) ->
+            case db of
+              Left err -> putStrLn err >> exitFailure
+              Right db' -> case action of
+                             Add url  -> saveDb dbPath (newPodcast url : db')
+                             List     -> mapM_ print db'
+                             Download -> do
+                                 db'' <- downloadAll logger cfg db'
+                                 saveDb dbPath db''
+        )
