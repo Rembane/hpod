@@ -77,7 +77,10 @@ readConfigFile :: Ini -> Config
 readConfigFile ini =
     Config (T.unpack $ parseValueDefault "filepaths" "db-path"             "podcasts.db" A.takeText ini)
            (T.unpack $ parseValueDefault "filepaths" "podcast-path"        "podcasts/"   A.takeText ini)
-           (           parseValueDefault "podcasts"  "max-allocated-space" 1024          A.decimal  ini)
+           (go (       parseValueDefault "podcasts"  "max-allocated-space"          1024 A.decimal  ini))
+    where
+        -- Default max size in byte.
+        go = (*) (1024 * 1024 * 1024) -- To Megabyte to Kilobyte to byte
 
 -- | Computes the total filesize of a path and its subdirectories.
 getRecursiveFileSize :: FilePath -> IO Integer
@@ -97,7 +100,7 @@ downloadAll logger cfg ps = do
     manager  <- newManager defaultManagerSettings
     currSize <- getRecursiveFileSize (cfgPodcastPath cfg)
     if currSize >= fromIntegral (cfgAllocatedSpace cfg)
-       then (logger "We have used up our podcast storage quota. Quitting.") >> return ps
+       then (logger $ fromString $ "We have used up our podcast storage quota. Allowed: " <> show (cfgAllocatedSpace cfg) <> " Used: " <> show currSize) >> return ps
        else forM ps $ \p -> do
            p' <- fetchPodcast logger p manager
            case p' of
