@@ -19,7 +19,7 @@ import Data.Semigroup ((<>))
 import Data.Serialize (decode, encode)
 import qualified Data.Text as T
 import Data.Text (Text)
-import Network.HTTP.Client (Manager, defaultManagerSettings, newManager)
+import Network.Http.Client
 import Options.Applicative (Parser, argument, auto, command, execParser, fullDesc, header, help, helper, info, long, metavar, option, progDesc, short, str, subparser, value)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getFileSize, listDirectory)
 import System.Exit (exitFailure)
@@ -97,36 +97,35 @@ getEpisodeFileSize e = maybe (return 0) (getFileSize . T.unpack) (localFilename 
 -- | Downloads new episodes while there still is space to put them in.
 downloadAll :: (IsString msg, ToLogStr msg) => SugarLogger msg -> Config -> [Podcast] -> IO [Podcast]
 downloadAll logger cfg ps = do
-    manager  <- newManager defaultManagerSettings
     currSize <- getRecursiveFileSize (cfgPodcastPath cfg)
     if currSize >= fromIntegral (cfgAllocatedSpace cfg)
        then (logger $ fromString $ "We have used up our podcast storage quota. Allowed: " <> show (cfgAllocatedSpace cfg) <> " Used: " <> show currSize) >> return ps
        else forM ps $ \p -> do
-           p' <- fetchPodcast logger p manager
+           p' <- fetchPodcast logger p
            case p' of
              Left err  -> logger (fromString err) >> return p
              Right p'' -> do
                  logger (fromString $ show p'')
                  -- Download in chronological order.
-                 es' <- (moderateDownloader manager p'' currSize . sortOn pubDate . M.elems . episodes) p''
+                 es' <- (moderateDownloader p'' currSize . sortOn pubDate . M.elems . episodes) p''
                  return p'' { episodes = M.fromList es' }
     where
         -- | Download until we've reached the quota.
-        moderateDownloader :: Manager -> Podcast -> Integer -> [Episode] -> IO [(Url, Episode)]
-        moderateDownloader _       _ _        []     = return []
-        moderateDownloader manager p currSize (e:es) = do
+        moderateDownloader :: Podcast -> Integer -> [Episode] -> IO [(Url, Episode)]
+        moderateDownloader _ _        []     = return []
+        moderateDownloader p currSize (e:es) = do
             if currSize >= (fromIntegral (cfgAllocatedSpace cfg))
                then logger "We have used all our podcast quota." >> return (map (\x -> (epUrl x, x)) (e:es))
                else do
-                   e' <- downloadE manager p e
+                   e' <- downloadE p e
                    size <- getEpisodeFileSize (snd e')
-                   (e':) <$> moderateDownloader manager p (currSize + size) es
+                   (e':) <$> moderateDownloader p (currSize + size) es
 
         -- Download an episode, the quick and dirty way.
-        downloadE manager p e = do
+        downloadE p e = do
             logger "Downloading... "
             logger (fromString $ show e)
-            e' <- downloadEpisode (cfgPodcastPath cfg) p e manager
+            e' <- downloadEpisode (cfgPodcastPath cfg) p e
             case e' of
               Left err  -> do
                   logger $ fromString ("Boom!\n" <> show err)
