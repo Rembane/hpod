@@ -65,8 +65,9 @@ downloadEpisode basePath p e mgr | (Just _) <- downloaded e = return $ Left "Epi
     case (parseRequest . T.unpack . epUrl) e of
         Left err  -> return $ Left $ show err
         Right req -> do
-            let [prefix, suffix] = T.splitOn "." $ epTitle e <> "-" <> T.takeWhileEnd (/='/') (epUrl e)
-            let filename = (formatTime defaultTimeLocale (iso8601DateFormat Nothing) (pubDate e)) <> "-" <> T.unpack (textToSlug prefix <> "." <> suffix)
+            let [prefix, suffix] = (T.splitOn "." . T.takeWhileEnd (/='/') . epUrl) e
+            let filename = formatTime defaultTimeLocale (iso8601DateFormat Nothing) (pubDate e)
+                         <> "-" <> T.unpack (textToSlug (epTitle e) <> "-" <> textToSlug prefix <> "." <> suffix)
             let relativeEpisodePath = ((T.unpack . textToSlug . pcTitle) p)
             createDirectoryIfMissing True (basePath </> relativeEpisodePath)
             withResponse req mgr $ \br ->
