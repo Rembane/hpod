@@ -37,6 +37,7 @@ data Podcast = Podcast
     , pcUrl       :: Url
     , episodes    :: Map Url Episode
     , lastChecked :: UTCTime
+    , pcETag      :: Maybe Text
     }
     deriving (Generic, Show)
 

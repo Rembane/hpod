@@ -1,7 +1,6 @@
 {-# LANGUAGE MultiWayIf, OverloadedStrings #-}
 
 -- TODO: Better error handling
--- TODO: Etags
 -- TODO: Make the program not check a podcast which has been checked the last hour or something.
 -- TODO: Add option to specify path to config file.
 

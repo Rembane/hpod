@@ -6,7 +6,7 @@ module Podcast
     , newPodcast
     ) where
 
-import Control.Error (note, partitionEithers)
+import Control.Error (hush, note, partitionEithers)
 import Control.Monad (unless)
 import Data.Bifunctor (first)
 import qualified Data.ByteString as B
@@ -38,7 +38,7 @@ textToSlug = T.toLower
 
 -- | Create a new podcast
 newPodcast :: Text -> Podcast
-newPodcast url = Podcast "" url M.empty (UTCTime (fromGregorian 1970 1 1) 0) -- epoch
+newPodcast url = Podcast "" url M.empty (UTCTime (fromGregorian 1970 1 1) 0) Nothing -- epoch
 
 -- | Download a podcast RSS/Atom file from the internet.
 fetchPodcast :: (IsString msg, ToLogStr msg) => SugarLogger msg -> Podcast -> IO (Either String Podcast)
@@ -50,10 +50,19 @@ fetchPodcast logger p = get (encodeUtf8 $ pcUrl p) $ \r i -> do
           unless (null ls) $ do
               logger "These episodes returned errors:"
               mapM_ (logger . fromString . show) ls
-          let pct' = note "Got no podcast title from parseRss" pct >>= (first show . decodeUtf8')
           now <- getCurrentTime
-          return $ either Left (\t -> Right $ p { pcTitle = t, episodes = foldr (\e m -> M.insertWith (\_ old -> old) (epUrl e) e m) (episodes p) rs, lastChecked = now }) pct'
+          return $ updatePodcast p r now rs $ note "Got no podcast title from parseRss" pct >>= (first show . decodeUtf8')
+
       s   -> return $ Left $ show s
+    where
+        updatePodcast p r now rs title = case title of
+                                           Left err     -> Left err
+                                           Right title' -> Right $ p
+                                               { pcTitle     = title'
+                                               , episodes    = foldr (\e m -> M.insertWith (\_ old -> old) (epUrl e) e m) (episodes p) rs
+                                               , lastChecked = now
+                                               , pcETag      = (hush . decodeUtf8') =<< getHeader r "ETag"
+                                               }
 
 -- | Download an episode
 downloadEpisode :: FilePath -> Podcast -> Episode -> IO (Either String Episode)
