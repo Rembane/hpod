@@ -1,7 +1,6 @@
 {-# LANGUAGE MultiWayIf, OverloadedStrings #-}
 
 -- TODO: Better error handling
--- TODO: Etags
 -- TODO: Make the program not check a podcast which has been checked the last hour or something.
 -- TODO: Add option to specify path to config file.
 
@@ -29,6 +28,7 @@ import System.Posix (fileSize, getFileStatus, isDirectory, isRegularFile)
 
 import Logging
 import Podcast
+import TUI
 
 -- | Config data type
 data Config = Config
@@ -133,7 +133,8 @@ downloadAll logger cfg ps = do
               Right e'' -> return (epUrl e'', e'')
 
 main :: IO ()
-main = do
+main = tuiMain
+{- do
     cfg <- either (\e -> putStrLn e >> exitFailure) return =<< (fmap . fmap) readConfigFile (readIniFile "hpod.ini")
 
     (Options action) <- execParser $ info (helper <*> argumentParser)
@@ -170,3 +171,4 @@ main = do
                                  db'' <- downloadAll logger cfg db'
                                  saveDb dbPath db''
         )
+        -}
